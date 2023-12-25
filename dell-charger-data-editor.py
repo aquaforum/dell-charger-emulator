@@ -1,4 +1,4 @@
-#!/usr/bin/env python 
+#!/usr/bin/env python3 
 import sys, math
 
 if len(sys.argv) >= 2:
@@ -202,6 +202,7 @@ def read_eeprom():
 	if not port:
 		return
 	with port as port:
+		ow_reset(port)
 		if not ow_reset(port):
 			print('Failed to issue OneWire reset!')
 			return
@@ -209,7 +210,7 @@ def read_eeprom():
 			print('Failed to send READ MEM command!')
 			return
 		print('Reading EEPROM...')
-		bytes = ow_read_bytes(port, 130)
+		bytes = ow_read_bytes(port, 128)
 		if bytes is None:
 			print('Failed to read data!')
 		data = bytes[1:-1]
