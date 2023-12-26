@@ -7,6 +7,30 @@
 #include <util/delay.h>
 #include "crc8.h"
 
+
+
+
+#define OWDDR  DDRD
+#define OWPORT PORTD
+#define OWPIN  PIND
+#define OWP    PD2
+
+#define GETPIN() (OWPIN&_BV(OWP))
+
+#define OWIFR  EIFR
+#define OWIF   INTF0
+
+#define OWMSK EIMSK
+#define OWINT INT0
+
+#define OWCR EICRA
+#define OWCRV (EICRA | _BV(ISC00)) & ~_BV(ISC01)
+
+#define DEBUG_UART
+
+#define OW_RELEASE() do { OWDDR &= ~_BV(OWP); OWPORT |= _BV(OWP);  /*PORTB |= _BV(PB5);*/} while (0)
+#define OW_PULL_LOW() do { OWPORT &= ~_BV(OWP); OWDDR |= _BV(OWP); /*PORTB &= ~_BV(PB5);*/} while (0)
+
 #define EEPROM_DATA_LENGTH 130
 // CN03XYY8CH20003GC44KA01
 
@@ -66,13 +90,6 @@ static struct {
 };
 
 
-#if 0
-#define OW_RELEASE() do { DDRC &= ~_BV(PC3); PORTC |= _BV(PC3);  PORTB |= _BV(PB5);} while (0)
-#define OW_PULL_LOW() do { PORTC &= ~_BV(PC3); DDRC |= _BV(PC3); PORTB &= ~_BV(PB5);} while (0)
-#else
-#define OW_RELEASE() do { DDRD &= ~_BV(PD2); PORTD |= _BV(PD2);  PORTB |= _BV(PB5);} while (0)
-#define OW_PULL_LOW() do { PORTD &= ~_BV(PD2); DDRD |= _BV(PD2); PORTB &= ~_BV(PB5);} while (0)
-#endif
 
 #define RESET_LEN 55
 #define PRESENT_LEN 15
@@ -112,9 +129,6 @@ static inline void ow_fetch_current_byte_from_buffer() {
 			ow.current_value = eeprom_read_byte(ow.tx_buffer + ow.current_byte);
 			break;
 	}
-#if 1
-    UDR0 = ow.current_value;
-#endif
 }
 
 static inline void ow_tx(const uint8_t *buffer, uint8_t count, uint8_t source, void (*callback)(void)) {
@@ -178,6 +192,7 @@ static void ow_command_received(void) {
 
 static void ow_bit_change(uint8_t bit)
 {
+#if 0
     if(bit)
     {
         PORTB |= _BV(PB4);
@@ -186,6 +201,7 @@ static void ow_bit_change(uint8_t bit)
     {
         PORTB &= ~_BV(PB4);
     }
+#endif
 	switch (ow.state) {
 		case OW_STATE_RESET:
 			if (bit) {
@@ -201,14 +217,14 @@ static void ow_bit_change(uint8_t bit)
             {
                 _delay_us(40);
 				uint8_t cur_bit = ow.current_bit;
-                if (PIND & _BV(PD2)) {
+                if (GETPIN()) {
 					ow.current_value |= _BV(cur_bit);
 				}
 				cur_bit++;
 				if (cur_bit == 8) {
 					uint8_t cur_byte = ow.current_byte;
 					ow.rx_buffer[cur_byte++] = ow.current_value;
-#if 1
+#ifdef DEBUG_UART
                     UDR0 = ow.current_value;
 #endif
 					ow.current_value = 0;
@@ -232,6 +248,9 @@ static void ow_bit_change(uint8_t bit)
 				uint8_t cur_bit = ow.current_bit;
 				cur_bit++;
 				if (cur_bit == 8) {
+#ifdef DEBUG_UART
+                    UDR0 = ow.current_value;
+#endif
 					uint8_t cur_byte = ow.current_byte;
 					cur_byte++;
 					cur_bit = 0;
@@ -269,36 +288,6 @@ static void ow_bit_change(uint8_t bit)
 
 }
 
-//ISR(PCINT1_vect)
-ISR(INT0_vect)
-{
-	uint8_t bit = ow.bit_state;
-	do {
-        PORTB &= ~_BV(PB3);
-#if 0
-		PCIFR = _BV(PCIF1);
-#else
-        EIFR = _BV(INTF0);
-#endif
-#if 1
-        bit = (bit==0?1:0);
-		if (!bit && ow.pull_low_next) {
-			OW_PULL_LOW();
-			ow.pull_low_next = 0;
-		}
-#endif
-		ow_bit_change(bit);
-        PORTB |= _BV(PB3);
-    }
-    while
-#if 0
-            (PCIFR & _BV(PCIF1));
-#else
-            (EIFR & _BV(INTF0));
-#endif
-    ow.bit_state = (PIND & _BV(PD2)) ? 1 : 0;
-}
-
 ISR(TIMER0_OVF_vect)
 {
 //    PORTB |= _BV(PB4);
@@ -315,7 +304,7 @@ ISR(TIMER0_COMPA_vect)
     switch (ow.state) {
     case OW_STATE_PRESENCE:
         TCNT0 = 256-RESET_LEN;
-        OCR0A = 0;
+        OCR0A = 256-RESET_LEN-1;
         OW_RELEASE();
         ow_rx(&ow.command, sizeof(ow.command), ow_command_received);
         break;
@@ -323,13 +312,17 @@ ISR(TIMER0_COMPA_vect)
 }
 
 int main(void) {
-    CLKPR = 0x80 ; //_BV(CLKPCE);
-    CLKPR = 0;
+     CLKPR = 0x80 ; //_BV(CLKPCE);
+     CLKPR = 0;
 
     // Disable analog comparator
     ACSR |= _BV(ACD);
     // Disable ADC, TIM1 and USI
-    PRR = _BV(PRADC) /*| _BV(PRUSART0)*/ |  _BV(PRSPI) | _BV(PRTIM1) | _BV(PRTIM2) | _BV(PRTWI);
+    PRR = _BV(PRADC)
+        #ifndef DEBUG_UART
+            | _BV(PRUSART0)
+        #endif
+            |  _BV(PRSPI) | _BV(PRTIM1) | _BV(PRTIM2) | _BV(PRTWI);
 
 #if 0
 	
@@ -349,43 +342,52 @@ int main(void) {
 	TIMSK0 |= _BV(TOIE0) | _BV(OCIE0A);
 	OCR0A = 0;
     
-	// PCINT11: Any change
-#if 0
-	PCICR = _BV(PCIE1);    
-	PCMSK1 |= _BV(PCINT11);
-	// Read current line state
-	PCIFR = _BV(PCIF1);
-#else
-    // INT0: Any change
-    EICRA = (EICRA | _BV(ISC00)) & ~_BV(ISC01);
-    EIMSK |= _BV(INT0);
-    // Read current line state
-    EIFR = _BV(INTF0);
-#endif
-#if 0
-    ow.bit_state = (PINC & _BV(PC3)) ? 1 : 0;
-#else
-    ow.bit_state = (PIND & _BV(PD2)) ? 1 : 0;
-#endif
-    DDRB |= _BV(PB5) | _BV(PB4) | _BV(PB3);
+    // INT: Any change
+//    PCICR = _BV(PCIE1);
+//    OWCR = OWCRV;
+//    OWMSK |= _BV(OWINT);
+//    OWIFR = _BV(OWIF);
+
+    ow.bit_state = (OWPIN & _BV(OWP)) ? 1 : 0;
+
+    DDRB  |= _BV(PB5) | _BV(PB4) | _BV(PB3);
     PORTB |= _BV(PB5);
     PORTB |= _BV(PB4);
     PORTB |= _BV(PB3);
 
-#if 1
+#ifdef DEBUG_UART
     UBRR0 = F_CPU/(16*115200)-1;
     UCSR0B = _BV(TXEN0);
 #endif
 
-	// Enable interrupts
+    // Enable interrupts
     sei();
-	// Main loop
-//    set_sleep_mode(SLEEP_MODE_IDLE);
-//    sleep_enable();
-    while (1) {
-//        sleep_cpu();
-        asm volatile ("nop");
+    // Main loop
+    while (1)
+    {
+        register uint8_t pin_in = GETPIN();
+        while(pin_in == GETPIN());
 
+        cli();
+        uint8_t bit = ow.bit_state;
+        do {
+            pin_in = GETPIN();
+#ifdef DEBUG_UART
+            PORTB &= ~_BV(PB3);
+#endif
+            bit = (bit==0?1:0);
+            if (!bit && ow.pull_low_next) {
+                OW_PULL_LOW();
+                ow.pull_low_next = 0;
+            }
+            ow_bit_change(bit);
+#ifdef DEBUG_UART
+            PORTB |= _BV(PB3);
+#endif
+        }
+        while (pin_in != GETPIN());
+        ow.bit_state = GETPIN()?1:0;
+        sei();
 	}
 }
 

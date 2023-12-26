@@ -4,8 +4,8 @@ GCC_MCU?=atmega328p
 OBJDUMP = avr-objdump
 PREFIX=/home/vanessa/.arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin
 
-CFLAGS?=-Os -g
-CFLAGS+=-mmcu=$(GCC_MCU) -DF_CPU=32000000
+CFLAGS?=-O2 -g -flto
+CFLAGS+=-mmcu=$(GCC_MCU) -DF_CPU=16000000
 
 AVRDUDE=/home/vanessa/.arduino15/packages/MiniCore/tools/avrdude/7.2-arduino.1/bin/avrdude
 AVRDUDE_FLAGS?=-C/home/vanessa/.arduino15/packages/MiniCore/hardware/avr/3.0.0/avrdude.conf -patmega328p -curclock -P/dev/ttyUSB0 -b57600
