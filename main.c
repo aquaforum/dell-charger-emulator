@@ -7,6 +7,7 @@
 #include <util/delay.h>
 #include "crc8.h"
 
+#define DEBUG_UART
 
 
 #if 0
@@ -43,9 +44,6 @@
 #endif
 
 #define GETPIN() (OWPIN&_BV(OWP))
-
-
-#define DEBUG_UART
 
 #define OW_RELEASE()  do { OWDDR &= ~_BV(OWP);  OWPORT |= _BV(OWP); PORTB |= _BV(PB5); } while (0)
 #define OW_PULL_LOW() do { OWPORT &= ~_BV(OWP); OWDDR |= _BV(OWP);  PORTB &= ~_BV(PB5);} while (0)
@@ -209,7 +207,7 @@ static void ow_command_received(void) {
 
 static void ow_bit_change(uint8_t bit)
 {
-#if 0
+#if 1
     if(bit)
     {
         PORTB |= _BV(PB4);
@@ -295,25 +293,23 @@ static void ow_bit_change(uint8_t bit)
     {
 		ow_start_timer();
     }
-#if 0
-    else
-    {
-        _delay_us(1);
-	}
-#endif
-
-
 }
 
 ISR(TIMER0_OVF_vect)
 {
-//    PORTB |= _BV(PB4);
-	TCCR0B = 0;    
+    TCCR0B = 0;
     TIFR0 = _BV(OCF0A);
 	if (!ow.bit_state) {
 		ow.state = OW_STATE_RESET;
 		ow.selected = 0;
 	}
+#ifdef DEBUG_UART
+    else
+    {
+        ow.state = OW_STATE_IDLE;
+        PORTB &= ~_BV(PB5);
+    }
+#endif
 }
 
 ISR(TIMER0_COMPA_vect)
@@ -334,7 +330,7 @@ int main(void) {
 
     // Disable analog comparator
     ACSR |= _BV(ACD);
-    // Disable ADC, TIM1 and USI
+    // Disable ALL
     PRR = _BV(PRADC)
         #ifndef DEBUG_UART
             | _BV(PRUSART0)
@@ -359,20 +355,14 @@ int main(void) {
 	TIMSK0 |= _BV(TOIE0) | _BV(OCIE0A);
 	OCR0A = 0;
     
-    // INT: Any change
-//    PCICR = _BV(PCIE1);
-//    OWCR = OWCRV;
-//    OWMSK |= _BV(OWINT);
-//    OWIFR = _BV(OWIF);
+    ow.bit_state = GETPIN() ? 1 : 0;
 
-    ow.bit_state = (OWPIN & _BV(OWP)) ? 1 : 0;
-
+#ifdef DEBUG_UART
     DDRB  |= _BV(PB5) | _BV(PB4) | _BV(PB3);
     PORTB |= _BV(PB5);
     PORTB |= _BV(PB4);
     PORTB |= _BV(PB3);
 
-#ifdef DEBUG_UART
     UBRR0 = F_CPU/(16*57600)-1;
     UCSR0B = _BV(TXEN0);
 #endif
