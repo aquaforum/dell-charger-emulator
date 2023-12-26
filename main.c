@@ -9,13 +9,11 @@
 
 
 
-
+#if 0
 #define OWDDR  DDRD
 #define OWPORT PORTD
 #define OWPIN  PIND
 #define OWP    PD2
-
-#define GETPIN() (OWPIN&_BV(OWP))
 
 #define OWIFR  EIFR
 #define OWIF   INTF0
@@ -26,10 +24,31 @@
 #define OWCR EICRA
 #define OWCRV (EICRA | _BV(ISC00)) & ~_BV(ISC01)
 
+#define RESET_LEN 55
+#define PRESENT_LEN 15
+
+#define OW_DELAY 40
+
+#else
+#define OWDDR  DDRC
+#define OWPORT PORTC
+#define OWPIN  PINC
+#define OWP    PC3
+
+#define RESET_LEN 25
+#define PRESENT_LEN 10
+
+#define OW_DELAY 30
+
+#endif
+
+#define GETPIN() (OWPIN&_BV(OWP))
+
+
 #define DEBUG_UART
 
-#define OW_RELEASE() do { OWDDR &= ~_BV(OWP); OWPORT |= _BV(OWP);  /*PORTB |= _BV(PB5);*/} while (0)
-#define OW_PULL_LOW() do { OWPORT &= ~_BV(OWP); OWDDR |= _BV(OWP); /*PORTB &= ~_BV(PB5);*/} while (0)
+#define OW_RELEASE()  do { OWDDR &= ~_BV(OWP);  OWPORT |= _BV(OWP); PORTB |= _BV(PB5); } while (0)
+#define OW_PULL_LOW() do { OWPORT &= ~_BV(OWP); OWDDR |= _BV(OWP);  PORTB &= ~_BV(PB5);} while (0)
 
 #define EEPROM_DATA_LENGTH 130
 // CN03XYY8CH20003GC44KA01
@@ -91,8 +110,6 @@ static struct {
 
 
 
-#define RESET_LEN 55
-#define PRESENT_LEN 15
 
 static inline void ow_start_timer(void) {
 	TCNT0 = 256-RESET_LEN;
@@ -215,7 +232,7 @@ static void ow_bit_change(uint8_t bit)
 		case OW_STATE_RX:
             if (!bit)
             {
-                _delay_us(40);
+                _delay_us(OW_DELAY);
 				uint8_t cur_bit = ow.current_bit;
                 if (GETPIN()) {
 					ow.current_value |= _BV(cur_bit);
@@ -244,7 +261,7 @@ static void ow_bit_change(uint8_t bit)
 			break;
 		case OW_STATE_TX:
 			if (!bit) {
-                _delay_us(40);
+                _delay_us(OW_DELAY);
 				uint8_t cur_bit = ow.current_bit;
 				cur_bit++;
 				if (cur_bit == 8) {
@@ -312,8 +329,8 @@ ISR(TIMER0_COMPA_vect)
 }
 
 int main(void) {
-     CLKPR = 0x80 ; //_BV(CLKPCE);
-     CLKPR = 0;
+//     CLKPR = 0x80 ; //_BV(CLKPCE);
+//     CLKPR = 1;
 
     // Disable analog comparator
     ACSR |= _BV(ACD);
@@ -356,7 +373,7 @@ int main(void) {
     PORTB |= _BV(PB3);
 
 #ifdef DEBUG_UART
-    UBRR0 = F_CPU/(16*115200)-1;
+    UBRR0 = F_CPU/(16*57600)-1;
     UCSR0B = _BV(TXEN0);
 #endif
 
